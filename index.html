@@ -1,0 +1,315 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>chickenstats</title>
+<meta name="description" content="Ten days of a Linux ISO mirror: upload and download by the hour, and when the chickens arrive.">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+  /* Layout: one column of cards, wide ones span the row; data in a mono face, prose in Plex Sans. */
+  :root {
+    --bg: #f6f5f1; --panel: #ffffff; --line: #e2dfd6; --fg: #1d1c19; --muted: #6b675d; --faint: #ece9e1;
+    --accent: #2a78d6; --s1: #2a78d6; --s2: #eb6834; --s3: #1baf7a; --s4: #eda100; --s5: #e87ba4; --s6: #008300;
+    --grid: #e9e6de; --axis: #c9c5ba; --ref: #9a958a;
+    --font-sans: "IBM Plex Sans", "Helvetica Neue", Arial, sans-serif; --font-mono: "IBM Plex Mono", "SFMono-Regular", Menlo, Consolas, monospace;
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+    --bg: #15161a; --panel: #1e2026; --line: #2f323a; --fg: #ebe9e3; --muted: #a09d94; --faint: #272a31;
+    --accent: #3987e5; --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500; --s5: #d55181; --s6: #2e9e2e;
+    --grid: #2b2e35; --axis: #454952; --ref: #7d8290; color-scheme: dark;
+  } }
+  :root[data-theme="dark"] {
+    --bg: #15161a; --panel: #1e2026; --line: #2f323a; --fg: #ebe9e3; --muted: #a09d94; --faint: #272a31;
+    --accent: #3987e5; --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500; --s5: #d55181; --s6: #2e9e2e;
+    --grid: #2b2e35; --axis: #454952; --ref: #7d8290; color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body { background: var(--bg); color: var(--fg); font-family: var(--font-sans); font-size: 15px; line-height: 1.5;
+    padding-block: 28px 48px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+  .wrap { max-width: 1120px; margin-inline: auto; display: flex; flex-direction: column; gap: 20px; }
+  header { display: flex; flex-direction: column; gap: 6px; }
+  h1 { margin: 0; font-size: 28px; font-weight: 600; letter-spacing: -0.01em; display: flex; align-items: center; gap: 10px; }
+  h1 .egg { width: 22px; height: 26px; background: var(--s4); border-radius: 50% 50% 50% 50% / 60% 60% 40% 40%; display: inline-block; }
+  .take { margin: 0; max-width: 70ch; color: var(--muted); }
+  .take b, .num { color: var(--fg); font-weight: 500; }
+  .note { margin: 0; color: var(--muted); font-size: 13px; max-width: 80ch; }
+  .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 150px), 1fr)); gap: 12px; }
+  .tile { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+  .tile .label { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; }
+  .tile .num { font-family: var(--font-mono); font-size: 26px; font-weight: 500; line-height: 1.2; font-variant-numeric: tabular-nums; }
+  .tile .sub { font-size: 12px; color: var(--muted); }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 24rem), 1fr)); gap: 16px; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 16px 18px; min-width: 0; display: flex; flex-direction: column; gap: 8px; }
+  .card.wide { grid-column: 1 / -1; }
+  h2 { margin: 0; font-size: 16px; font-weight: 600; }
+  .legend { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 12px; color: var(--muted); }
+  .legend span { display: inline-flex; align-items: center; gap: 6px; }
+  .sw { display: inline-block; width: 10px; height: 10px; border-radius: 3px; }
+  .sw.line { height: 3px; width: 14px; border-radius: 2px; }
+  .plot { position: relative; min-height: 280px; }
+  .plot.heat { min-height: 300px; }
+  .plot.bars { min-height: 260px; }
+  .plot svg { display: block; max-width: 100%; font-family: var(--font-sans); }
+  .plot svg text { font-size: 12px; fill: var(--muted); }
+  .tip { position: absolute; pointer-events: none; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 6px 20px rgba(0,0,0,.14); padding: 6px 10px; font-size: 12px; white-space: nowrap; z-index: 2; }
+  .tip .h { color: var(--muted); margin-bottom: 2px; }
+  .tip .r { display: flex; align-items: center; gap: 6px; font-variant-numeric: tabular-nums; }
+  .tip .r i { display: inline-block; width: 8px; height: 8px; border-radius: 2px; }
+  .scale { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); }
+  .scale .ramp { height: 8px; width: 120px; border-radius: 4px; border: 1px solid var(--line); }
+  .tablebox { overflow-x: auto; }
+  table { border-collapse: collapse; width: 100%; font-size: 14px; font-variant-numeric: tabular-nums; }
+  th, td { text-align: right; padding: 6px 10px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+  th:first-child, td:first-child { text-align: left; }
+  td.mono, th.mono { font-family: var(--font-mono); font-size: 13px; text-align: left; }
+  th { font-weight: 500; color: var(--muted); font-size: 12px; }
+  tr.max td { font-weight: 600; }
+  a { color: var(--accent); }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  @media (prefers-reduced-motion: no-preference) { .tip { transition: opacity .12s ease-out; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1><i class="egg" aria-hidden="true"></i>chickenstats</h1>
+    <p class="take" id="take">Loading the coop…</p>
+    <p class="note">A Linux ISO mirror watched for ten days. Throughput is the public port, averaged per 5 minutes and per hour, in Gbps. A chicken is one ISO the mirror picked up; counts use the time it was added. Days are numbered from the first day of the log, hours are UTC. Day 1 starts at 10:30 and the last day is partial.</p>
+  </header>
+
+  <section class="tiles" id="tiles"></section>
+
+  <section class="grid">
+    <div class="card wide" id="throughput">
+      <h2>Upload and download, hour by hour</h2>
+      <p class="note">Each point is the average of one hour. The faint line is the busiest 5-minute bucket inside that hour, so you can see how spiky the hour was.</p>
+      <div class="legend">
+        <span><i class="sw line" style="background: var(--s1)"></i>Upload</span>
+        <span><i class="sw line" style="background: var(--s2)"></i>Download</span>
+        <span><i class="sw line" style="background: var(--s1); opacity: .4"></i>Upload, busiest 5 min in the hour</span>
+      </div>
+      <div class="plot" id="tp-chart"></div>
+    </div>
+
+    <div class="card wide" id="upload-heat">
+      <h2>When the upload happens</h2>
+      <p class="note">Average upload in Gbps for each hour of each day. Darker is busier; an outlined empty cell has no data.</p>
+      <div class="scale"><span>0</span><i class="ramp" id="ramp-tx"></i><span id="heat-tx-max">—</span><span>Gbps</span></div>
+      <div class="plot heat" id="heat-tx"></div>
+    </div>
+
+    <div class="card" id="adds">
+      <h2>Chickens added per day</h2>
+      <p class="note">Stacked by category. Big days are mostly whole flocks arriving at once.</p>
+      <div class="legend" id="adds-legend"></div>
+      <div class="plot bars" id="adds-bars"></div>
+    </div>
+
+    <div class="card" id="mirrors">
+      <h2>Where the chickens come from</h2>
+      <p class="note">Chickens added per day by upstream mirror. The smallest mirrors are folded into "other".</p>
+      <div class="legend" id="mirror-legend"></div>
+      <div class="plot bars" id="mirror-bars"></div>
+    </div>
+
+    <div class="card wide" id="adds-heat">
+      <h2>When the chickens arrive</h2>
+      <p class="note">Chickens added in each hour of each day.</p>
+      <div class="scale"><span>0</span><i class="ramp" id="ramp-adds"></i><span id="heat-adds-max">—</span><span>per hour</span></div>
+      <div class="plot heat" id="heat-adds"></div>
+    </div>
+
+    <div class="card wide" id="latest">
+      <h2>Latest chickens</h2>
+      <p class="note">The last twelve to arrive.</p>
+      <div class="tablebox">
+        <table>
+          <thead><tr><th class="mono">ISO</th><th>Size GB</th><th class="mono">Mirror</th><th class="mono">Category</th><th>Day</th><th>At (UTC)</th></tr></thead>
+          <tbody id="latest-rows"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="card wide" id="days">
+      <h2>Day by day</h2>
+      <p class="note">The busiest 5 minutes is the highest 5-minute average upload of the day. The record day is in bold.</p>
+      <div class="tablebox">
+        <table>
+          <thead><tr>
+            <th>Day</th><th>Uploaded TB</th><th>Downloaded TB</th><th>Avg upload Gbps</th><th>Busiest 5 min Gbps</th><th>At (UTC)</th><th>Chickens</th><th>Chickens TB</th>
+          </tr></thead>
+          <tbody id="daily-rows"></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.9.0/d3.min.js"></script>
+<script id="data" type="application/json">{"days":10,"hourly":[{"d":1,"h":10,"tx":0.0,"rx":0.0,"mx":0.0},{"d":1,"h":11,"tx":0.0,"rx":0.0,"mx":0.0},{"d":1,"h":12,"tx":0.07,"rx":0.039,"mx":0.505},{"d":1,"h":13,"tx":0.085,"rx":0.131,"mx":0.286},{"d":1,"h":14,"tx":0.03,"rx":1.2,"mx":0.279},{"d":1,"h":15,"tx":0.278,"rx":0.905,"mx":0.482},{"d":1,"h":16,"tx":0.36,"rx":0.118,"mx":0.564},{"d":1,"h":17,"tx":0.444,"rx":0.559,"mx":0.948},{"d":1,"h":18,"tx":0.874,"rx":1.291,"mx":1.472},{"d":1,"h":19,"tx":0.848,"rx":0.259,"mx":1.808},{"d":1,"h":20,"tx":0.47,"rx":0.246,"mx":1.439},{"d":1,"h":21,"tx":0.181,"rx":0.055,"mx":0.789},{"d":1,"h":22,"tx":0.072,"rx":0.028,"mx":0.164},{"d":1,"h":23,"tx":0.462,"rx":0.422,"mx":1.179},{"d":2,"h":0,"tx":0.255,"rx":0.263,"mx":0.999},{"d":2,"h":1,"tx":1.26,"rx":0.458,"mx":2.565},{"d":2,"h":2,"tx":0.275,"rx":0.217,"mx":0.88},{"d":2,"h":3,"tx":0.135,"rx":0.015,"mx":0.468},{"d":2,"h":4,"tx":0.263,"rx":0.171,"mx":0.923},{"d":2,"h":5,"tx":0.033,"rx":0.394,"mx":0.337},{"d":2,"h":6,"tx":0.158,"rx":0.327,"mx":0.311},{"d":2,"h":7,"tx":0.198,"rx":0.115,"mx":0.553},{"d":2,"h":8,"tx":0.058,"rx":0.118,"mx":0.139},{"d":2,"h":9,"tx":0.012,"rx":0.021,"mx":0.058},{"d":2,"h":10,"tx":0.016,"rx":0.004,"mx":0.1},{"d":2,"h":11,"tx":0.015,"rx":0.0,"mx":0.148},{"d":2,"h":12,"tx":0.001,"rx":0.0,"mx":0.014},{"d":2,"h":13,"tx":0.0,"rx":0.0,"mx":0.0},{"d":2,"h":14,"tx":0.001,"rx":0.0,"mx":0.003},{"d":2,"h":15,"tx":0.033,"rx":0.095,"mx":0.162},{"d":2,"h":16,"tx":0.014,"rx":0.0,"mx":0.043},{"d":2,"h":17,"tx":0.224,"rx":0.074,"mx":0.47},{"d":2,"h":18,"tx":0.32,"rx":0.148,"mx":1.793},{"d":2,"h":19,"tx":0.103,"rx":0.299,"mx":0.325},{"d":2,"h":20,"tx":0.656,"rx":0.401,"mx":1.499},{"d":2,"h":21,"tx":0.282,"rx":0.143,"mx":1.526},{"d":2,"h":22,"tx":0.11,"rx":0.094,"mx":0.445},{"d":2,"h":23,"tx":0.464,"rx":0.277,"mx":0.932},{"d":3,"h":0,"tx":0.266,"rx":0.186,"mx":0.766},{"d":3,"h":1,"tx":0.116,"rx":0.086,"mx":0.359},{"d":3,"h":2,"tx":0.154,"rx":0.067,"mx":0.572},{"d":3,"h":3,"tx":0.404,"rx":0.242,"mx":1.009},{"d":3,"h":4,"tx":0.203,"rx":0.052,"mx":0.872},{"d":3,"h":5,"tx":0.339,"rx":0.179,"mx":1.286},{"d":3,"h":6,"tx":0.182,"rx":0.103,"mx":0.537},{"d":3,"h":7,"tx":0.558,"rx":0.185,"mx":1.29},{"d":3,"h":8,"tx":0.114,"rx":0.026,"mx":0.527},{"d":3,"h":9,"tx":0.112,"rx":0.015,"mx":0.32},{"d":3,"h":10,"tx":0.053,"rx":0.008,"mx":0.202},{"d":3,"h":11,"tx":0.482,"rx":0.085,"mx":2.847},{"d":3,"h":12,"tx":0.283,"rx":0.196,"mx":1.498},{"d":3,"h":13,"tx":0.358,"rx":0.369,"mx":0.934},{"d":3,"h":14,"tx":0.426,"rx":0.213,"mx":1.273},{"d":3,"h":15,"tx":0.455,"rx":0.093,"mx":1.465},{"d":3,"h":16,"tx":0.382,"rx":0.214,"mx":1.355},{"d":3,"h":17,"tx":0.589,"rx":0.389,"mx":2.402},{"d":3,"h":18,"tx":0.638,"rx":0.614,"mx":1.303},{"d":3,"h":19,"tx":0.283,"rx":0.102,"mx":0.622},{"d":3,"h":20,"tx":0.266,"rx":0.151,"mx":1.134},{"d":3,"h":21,"tx":0.305,"rx":0.184,"mx":1.494},{"d":3,"h":22,"tx":0.126,"rx":0.117,"mx":0.563},{"d":3,"h":23,"tx":0.108,"rx":0.208,"mx":0.422},{"d":4,"h":0,"tx":0.994,"rx":0.598,"mx":2.231},{"d":4,"h":1,"tx":0.53,"rx":0.133,"mx":1.735},{"d":4,"h":2,"tx":0.168,"rx":0.028,"mx":0.422},{"d":4,"h":3,"tx":0.164,"rx":0.099,"mx":0.752},{"d":4,"h":4,"tx":0.117,"rx":0.094,"mx":0.322},{"d":4,"h":5,"tx":0.244,"rx":0.166,"mx":0.713},{"d":4,"h":6,"tx":0.327,"rx":0.13,"mx":0.858},{"d":4,"h":7,"tx":0.425,"rx":0.124,"mx":0.971},{"d":4,"h":8,"tx":0.3,"rx":0.064,"mx":0.873},{"d":4,"h":9,"tx":1.495,"rx":0.171,"mx":2.098},{"d":4,"h":10,"tx":0.717,"rx":0.085,"mx":1.51},{"d":4,"h":11,"tx":0.202,"rx":0.058,"mx":0.668},{"d":4,"h":12,"tx":0.095,"rx":0.019,"mx":0.28},{"d":4,"h":13,"tx":0.053,"rx":0.001,"mx":0.175},{"d":4,"h":14,"tx":0.039,"rx":0.001,"mx":0.097},{"d":4,"h":15,"tx":0.769,"rx":0.113,"mx":1.828},{"d":4,"h":16,"tx":0.419,"rx":0.104,"mx":1.131},{"d":4,"h":17,"tx":0.203,"rx":0.073,"mx":0.759},{"d":4,"h":18,"tx":0.477,"rx":0.224,"mx":1.14},{"d":4,"h":19,"tx":0.775,"rx":0.531,"mx":1.778},{"d":4,"h":20,"tx":0.69,"rx":0.467,"mx":2.503},{"d":4,"h":21,"tx":0.921,"rx":0.287,"mx":2.585},{"d":4,"h":22,"tx":0.499,"rx":0.268,"mx":1.97},{"d":4,"h":23,"tx":0.247,"rx":0.114,"mx":0.894},{"d":5,"h":0,"tx":0.083,"rx":0.065,"mx":0.437},{"d":5,"h":1,"tx":0.299,"rx":0.371,"mx":2.218},{"d":5,"h":2,"tx":0.553,"rx":0.417,"mx":1.835},{"d":5,"h":3,"tx":0.472,"rx":0.351,"mx":0.864},{"d":5,"h":4,"tx":0.297,"rx":0.242,"mx":1.528},{"d":5,"h":5,"tx":0.217,"rx":0.079,"mx":0.497},{"d":5,"h":6,"tx":0.456,"rx":0.349,"mx":1.417},{"d":5,"h":7,"tx":0.441,"rx":0.357,"mx":0.838},{"d":5,"h":8,"tx":0.48,"rx":0.177,"mx":1.11},{"d":5,"h":9,"tx":0.335,"rx":0.27,"mx":0.552},{"d":5,"h":10,"tx":0.208,"rx":0.057,"mx":0.329},{"d":5,"h":11,"tx":0.497,"rx":0.444,"mx":1.478},{"d":5,"h":12,"tx":0.109,"rx":0.128,"mx":0.283},{"d":5,"h":13,"tx":0.214,"rx":0.224,"mx":0.507},{"d":5,"h":14,"tx":0.248,"rx":0.427,"mx":1.342},{"d":5,"h":15,"tx":0.137,"rx":0.013,"mx":0.884},{"d":5,"h":16,"tx":0.14,"rx":0.049,"mx":0.396},{"d":5,"h":17,"tx":0.203,"rx":0.149,"mx":0.936},{"d":5,"h":18,"tx":0.375,"rx":0.16,"mx":1.405},{"d":5,"h":19,"tx":1.325,"rx":0.449,"mx":4.493},{"d":5,"h":20,"tx":0.413,"rx":0.442,"mx":1.08},{"d":5,"h":21,"tx":0.333,"rx":0.242,"mx":0.753},{"d":5,"h":22,"tx":0.835,"rx":1.655,"mx":2.23},{"d":5,"h":23,"tx":1.1,"rx":0.365,"mx":1.949},{"d":6,"h":0,"tx":0.228,"rx":0.067,"mx":0.444},{"d":6,"h":1,"tx":0.229,"rx":0.146,"mx":1.213},{"d":6,"h":2,"tx":0.465,"rx":0.336,"mx":0.91},{"d":6,"h":3,"tx":0.14,"rx":0.18,"mx":0.432},{"d":6,"h":4,"tx":0.072,"rx":0.064,"mx":0.271},{"d":6,"h":5,"tx":0.352,"rx":0.172,"mx":0.717},{"d":6,"h":6,"tx":0.301,"rx":0.171,"mx":1.053},{"d":6,"h":7,"tx":0.444,"rx":0.158,"mx":1.085},{"d":6,"h":8,"tx":0.45,"rx":0.154,"mx":1.269},{"d":6,"h":9,"tx":0.152,"rx":0.066,"mx":0.559},{"d":6,"h":10,"tx":0.466,"rx":0.234,"mx":1.252},{"d":6,"h":11,"tx":0.569,"rx":0.3,"mx":1.786},{"d":6,"h":12,"tx":0.321,"rx":0.206,"mx":1.241},{"d":6,"h":13,"tx":0.544,"rx":0.84,"mx":0.9},{"d":6,"h":14,"tx":0.56,"rx":0.465,"mx":1.305},{"d":6,"h":15,"tx":0.563,"rx":0.366,"mx":1.496},{"d":6,"h":16,"tx":0.653,"rx":0.608,"mx":3.816},{"d":6,"h":17,"tx":1.174,"rx":0.58,"mx":3.17},{"d":6,"h":18,"tx":0.864,"rx":0.518,"mx":2.79},{"d":6,"h":19,"tx":0.932,"rx":0.892,"mx":2.756},{"d":6,"h":20,"tx":0.442,"rx":0.091,"mx":0.904},{"d":6,"h":21,"tx":0.538,"rx":0.197,"mx":1.684},{"d":6,"h":22,"tx":0.439,"rx":0.308,"mx":1.217},{"d":6,"h":23,"tx":0.791,"rx":0.523,"mx":2.298},{"d":7,"h":0,"tx":0.929,"rx":0.409,"mx":2.16},{"d":7,"h":1,"tx":1.068,"rx":0.52,"mx":2.041},{"d":7,"h":2,"tx":0.432,"rx":0.234,"mx":1.019},{"d":7,"h":3,"tx":0.94,"rx":0.464,"mx":1.549},{"d":7,"h":4,"tx":0.664,"rx":0.15,"mx":2.142},{"d":7,"h":5,"tx":0.444,"rx":0.224,"mx":0.856},{"d":7,"h":6,"tx":0.38,"rx":0.237,"mx":1.094},{"d":7,"h":7,"tx":0.352,"rx":0.154,"mx":0.723},{"d":7,"h":8,"tx":0.333,"rx":0.109,"mx":0.893},{"d":7,"h":9,"tx":0.229,"rx":0.354,"mx":0.698},{"d":7,"h":10,"tx":0.189,"rx":0.171,"mx":0.901},{"d":7,"h":11,"tx":0.34,"rx":0.508,"mx":1.043},{"d":7,"h":12,"tx":0.329,"rx":0.392,"mx":1.035},{"d":7,"h":13,"tx":0.673,"rx":0.086,"mx":2.277},{"d":7,"h":14,"tx":0.629,"rx":0.321,"mx":1.462},{"d":7,"h":15,"tx":0.459,"rx":0.773,"mx":0.699},{"d":7,"h":16,"tx":0.463,"rx":1.059,"mx":0.979},{"d":7,"h":17,"tx":0.418,"rx":0.799,"mx":1.056},{"d":7,"h":18,"tx":1.097,"rx":0.934,"mx":1.495},{"d":7,"h":19,"tx":0.737,"rx":0.3,"mx":1.394},{"d":7,"h":20,"tx":0.682,"rx":0.299,"mx":1.578},{"d":7,"h":21,"tx":0.533,"rx":0.35,"mx":1.152},{"d":7,"h":22,"tx":0.816,"rx":0.396,"mx":2.348},{"d":7,"h":23,"tx":0.678,"rx":0.292,"mx":1.104},{"d":8,"h":0,"tx":0.696,"rx":0.039,"mx":1.166},{"d":8,"h":1,"tx":1.062,"rx":0.428,"mx":2.656},{"d":8,"h":2,"tx":1.431,"rx":0.733,"mx":2.14},{"d":8,"h":3,"tx":0.438,"rx":0.209,"mx":0.85},{"d":8,"h":4,"tx":0.497,"rx":0.181,"mx":1.329},{"d":8,"h":5,"tx":0.984,"rx":0.643,"mx":2.465},{"d":8,"h":6,"tx":0.432,"rx":0.284,"mx":0.954},{"d":8,"h":7,"tx":0.447,"rx":0.304,"mx":1.786},{"d":8,"h":8,"tx":0.268,"rx":0.112,"mx":0.573},{"d":8,"h":9,"tx":0.472,"rx":0.446,"mx":1.547},{"d":8,"h":10,"tx":0.469,"rx":0.37,"mx":0.842},{"d":8,"h":11,"tx":0.787,"rx":0.214,"mx":1.153},{"d":8,"h":12,"tx":0.257,"rx":0.017,"mx":0.47},{"d":8,"h":13,"tx":0.21,"rx":0.254,"mx":0.635},{"d":8,"h":14,"tx":0.239,"rx":0.075,"mx":1.146},{"d":8,"h":15,"tx":0.287,"rx":0.195,"mx":0.535},{"d":8,"h":16,"tx":0.088,"rx":0.001,"mx":0.343},{"d":8,"h":17,"tx":0.031,"rx":0.079,"mx":0.106},{"d":8,"h":18,"tx":0.26,"rx":0.04,"mx":0.895},{"d":8,"h":19,"tx":0.233,"rx":0.306,"mx":0.747},{"d":8,"h":20,"tx":0.134,"rx":0.155,"mx":0.248},{"d":8,"h":21,"tx":0.863,"rx":0.454,"mx":1.823},{"d":8,"h":22,"tx":0.361,"rx":0.08,"mx":0.661},{"d":8,"h":23,"tx":0.315,"rx":0.028,"mx":0.858},{"d":9,"h":0,"tx":0.482,"rx":0.135,"mx":1.078},{"d":9,"h":1,"tx":0.451,"rx":0.269,"mx":1.788},{"d":9,"h":2,"tx":0.174,"rx":0.097,"mx":0.413},{"d":9,"h":3,"tx":0.572,"rx":0.102,"mx":1.568},{"d":9,"h":4,"tx":0.248,"rx":0.002,"mx":0.482},{"d":9,"h":5,"tx":0.231,"rx":0.174,"mx":0.53},{"d":9,"h":6,"tx":0.215,"rx":0.073,"mx":0.861},{"d":9,"h":7,"tx":0.518,"rx":0.174,"mx":1.24},{"d":9,"h":8,"tx":0.148,"rx":0.097,"mx":0.399},{"d":9,"h":9,"tx":0.049,"rx":0.113,"mx":0.226},{"d":9,"h":10,"tx":0.128,"rx":0.052,"mx":0.351},{"d":9,"h":11,"tx":0.319,"rx":0.134,"mx":1.082},{"d":9,"h":12,"tx":0.101,"rx":0.058,"mx":0.315},{"d":9,"h":13,"tx":0.202,"rx":0.129,"mx":0.431},{"d":9,"h":14,"tx":0.222,"rx":0.209,"mx":0.726},{"d":9,"h":15,"tx":0.544,"rx":0.337,"mx":2.22},{"d":9,"h":16,"tx":0.635,"rx":0.167,"mx":1.162},{"d":9,"h":17,"tx":0.446,"rx":0.137,"mx":1.486},{"d":9,"h":18,"tx":0.705,"rx":0.094,"mx":1.168},{"d":9,"h":19,"tx":0.304,"rx":0.089,"mx":0.904},{"d":9,"h":20,"tx":0.185,"rx":0.029,"mx":0.691},{"d":9,"h":21,"tx":0.202,"rx":0.095,"mx":0.899},{"d":9,"h":22,"tx":0.155,"rx":0.008,"mx":0.397},{"d":9,"h":23,"tx":0.699,"rx":0.252,"mx":1.606},{"d":10,"h":0,"tx":1.182,"rx":0.241,"mx":2.593},{"d":10,"h":1,"tx":1.272,"rx":0.285,"mx":3.012},{"d":10,"h":2,"tx":1.457,"rx":0.185,"mx":2.175},{"d":10,"h":3,"tx":0.696,"rx":0.137,"mx":1.525},{"d":10,"h":4,"tx":0.103,"rx":0.001,"mx":0.279},{"d":10,"h":5,"tx":0.056,"rx":0.006,"mx":0.117},{"d":10,"h":6,"tx":0.116,"rx":0.004,"mx":0.347},{"d":10,"h":7,"tx":0.433,"rx":0.175,"mx":0.737},{"d":10,"h":8,"tx":0.563,"rx":0.313,"mx":0.95}],"daily":[{"d":1,"tx_tb":1.88,"rx_tb":2.36,"peak_tx":1.81,"peak_at":"19:05","avg_tx":0.309,"hours":13.5,"n":279,"tb":5.64},{"d":2,"tx_tb":2.2,"rx_tb":1.64,"peak_tx":2.56,"peak_at":"01:20","avg_tx":0.204,"hours":23.916666666666668,"n":221,"tb":2.59},{"d":3,"tx_tb":3.24,"rx_tb":1.84,"peak_tx":2.85,"peak_at":"11:50","avg_tx":0.3,"hours":24.0,"n":295,"tb":3.45},{"d":4,"tx_tb":4.89,"rx_tb":1.78,"peak_tx":2.58,"peak_at":"21:00","avg_tx":0.453,"hours":24.0,"n":527,"tb":4.48},{"d":5,"tx_tb":4.4,"rx_tb":3.37,"peak_tx":4.49,"peak_at":"19:25","avg_tx":0.407,"hours":24.0,"n":375,"tb":6.06},{"d":6,"tx_tb":5.26,"rx_tb":3.44,"peak_tx":3.82,"peak_at":"16:55","avg_tx":0.487,"hours":24.0,"n":468,"tb":7.06},{"d":7,"tx_tb":6.22,"rx_tb":4.29,"peak_tx":2.35,"peak_at":"22:45","avg_tx":0.576,"hours":24.0,"n":968,"tb":8.77},{"d":8,"tx_tb":5.05,"rx_tb":2.53,"peak_tx":2.66,"peak_at":"01:30","avg_tx":0.469,"hours":23.916666666666668,"n":914,"tb":9.38},{"d":9,"tx_tb":3.57,"rx_tb":1.36,"peak_tx":2.22,"peak_at":"15:50","avg_tx":0.331,"hours":24.0,"n":365,"tb":3.77},{"d":10,"tx_tb":2.54,"rx_tb":0.55,"peak_tx":3.01,"peak_at":"01:55","avg_tx":0.658,"hours":8.583333333333334,"n":152,"tb":1.62}],"cats":["distributions","server-editions","desktop-environments","arm-builds"],"adds":[{"d":1,"n":279,"distributions":155,"server-editions":124,"desktop-environments":0,"arm-builds":0},{"d":2,"n":221,"distributions":157,"server-editions":64,"desktop-environments":0,"arm-builds":0},{"d":3,"n":295,"distributions":173,"server-editions":122,"desktop-environments":0,"arm-builds":0},{"d":4,"n":527,"distributions":198,"server-editions":329,"desktop-environments":0,"arm-builds":0},{"d":5,"n":375,"distributions":219,"server-editions":156,"desktop-environments":0,"arm-builds":0},{"d":6,"n":468,"distributions":272,"server-editions":196,"desktop-environments":0,"arm-builds":0},{"d":7,"n":968,"distributions":343,"server-editions":406,"desktop-environments":151,"arm-builds":68},{"d":8,"n":914,"distributions":60,"server-editions":596,"desktop-environments":152,"arm-builds":106},{"d":9,"n":365,"distributions":112,"server-editions":152,"desktop-environments":58,"arm-builds":43},{"d":10,"n":152,"distributions":8,"server-editions":97,"desktop-environments":34,"arm-builds":13}],"adds_heat":[{"d":1,"h":0,"n":0},{"d":1,"h":1,"n":0},{"d":1,"h":2,"n":0},{"d":1,"h":3,"n":0},{"d":1,"h":4,"n":0},{"d":1,"h":5,"n":0},{"d":1,"h":6,"n":0},{"d":1,"h":7,"n":0},{"d":1,"h":8,"n":0},{"d":1,"h":9,"n":0},{"d":1,"h":10,"n":0},{"d":1,"h":11,"n":0},{"d":1,"h":12,"n":1},{"d":1,"h":13,"n":7},{"d":1,"h":14,"n":83},{"d":1,"h":15,"n":35},{"d":1,"h":16,"n":17},{"d":1,"h":17,"n":21},{"d":1,"h":18,"n":64},{"d":1,"h":19,"n":19},{"d":1,"h":20,"n":9},{"d":1,"h":21,"n":2},{"d":1,"h":22,"n":0},{"d":1,"h":23,"n":21},{"d":2,"h":0,"n":11},{"d":2,"h":1,"n":25},{"d":2,"h":2,"n":17},{"d":2,"h":3,"n":4},{"d":2,"h":4,"n":7},{"d":2,"h":5,"n":9},{"d":2,"h":6,"n":2},{"d":2,"h":7,"n":37},{"d":2,"h":8,"n":17},{"d":2,"h":9,"n":0},{"d":2,"h":10,"n":0},{"d":2,"h":11,"n":0},{"d":2,"h":12,"n":0},{"d":2,"h":13,"n":0},{"d":2,"h":14,"n":0},{"d":2,"h":15,"n":6},{"d":2,"h":16,"n":0},{"d":2,"h":17,"n":17},{"d":2,"h":18,"n":14},{"d":2,"h":19,"n":7},{"d":2,"h":20,"n":13},{"d":2,"h":21,"n":4},{"d":2,"h":22,"n":9},{"d":2,"h":23,"n":22},{"d":3,"h":0,"n":19},{"d":3,"h":1,"n":0},{"d":3,"h":2,"n":7},{"d":3,"h":3,"n":5},{"d":3,"h":4,"n":9},{"d":3,"h":5,"n":15},{"d":3,"h":6,"n":11},{"d":3,"h":7,"n":26},{"d":3,"h":8,"n":8},{"d":3,"h":9,"n":0},{"d":3,"h":10,"n":2},{"d":3,"h":11,"n":4},{"d":3,"h":12,"n":6},{"d":3,"h":13,"n":39},{"d":3,"h":14,"n":16},{"d":3,"h":15,"n":2},{"d":3,"h":16,"n":11},{"d":3,"h":17,"n":13},{"d":3,"h":18,"n":39},{"d":3,"h":19,"n":12},{"d":3,"h":20,"n":18},{"d":3,"h":21,"n":12},{"d":3,"h":22,"n":8},{"d":3,"h":23,"n":13},{"d":4,"h":0,"n":26},{"d":4,"h":1,"n":9},{"d":4,"h":2,"n":0},{"d":4,"h":3,"n":7},{"d":4,"h":4,"n":18},{"d":4,"h":5,"n":10},{"d":4,"h":6,"n":7},{"d":4,"h":7,"n":24},{"d":4,"h":8,"n":3},{"d":4,"h":9,"n":253},{"d":4,"h":10,"n":16},{"d":4,"h":11,"n":10},{"d":4,"h":12,"n":6},{"d":4,"h":13,"n":0},{"d":4,"h":14,"n":1},{"d":4,"h":15,"n":20},{"d":4,"h":16,"n":20},{"d":4,"h":17,"n":8},{"d":4,"h":18,"n":8},{"d":4,"h":19,"n":22},{"d":4,"h":20,"n":18},{"d":4,"h":21,"n":11},{"d":4,"h":22,"n":13},{"d":4,"h":23,"n":17},{"d":5,"h":0,"n":12},{"d":5,"h":1,"n":8},{"d":5,"h":2,"n":25},{"d":5,"h":3,"n":18},{"d":5,"h":4,"n":13},{"d":5,"h":5,"n":4},{"d":5,"h":6,"n":19},{"d":5,"h":7,"n":13},{"d":5,"h":8,"n":15},{"d":5,"h":9,"n":14},{"d":5,"h":10,"n":11},{"d":5,"h":11,"n":27},{"d":5,"h":12,"n":7},{"d":5,"h":13,"n":5},{"d":5,"h":14,"n":15},{"d":5,"h":15,"n":3},{"d":5,"h":16,"n":3},{"d":5,"h":17,"n":12},{"d":5,"h":18,"n":12},{"d":5,"h":19,"n":4},{"d":5,"h":20,"n":16},{"d":5,"h":21,"n":12},{"d":5,"h":22,"n":80},{"d":5,"h":23,"n":27},{"d":6,"h":0,"n":7},{"d":6,"h":1,"n":8},{"d":6,"h":2,"n":27},{"d":6,"h":3,"n":10},{"d":6,"h":4,"n":3},{"d":6,"h":5,"n":7},{"d":6,"h":6,"n":7},{"d":6,"h":7,"n":24},{"d":6,"h":8,"n":12},{"d":6,"h":9,"n":1},{"d":6,"h":10,"n":12},{"d":6,"h":11,"n":28},{"d":6,"h":12,"n":22},{"d":6,"h":13,"n":70},{"d":6,"h":14,"n":45},{"d":6,"h":15,"n":39},{"d":6,"h":16,"n":34},{"d":6,"h":17,"n":20},{"d":6,"h":18,"n":21},{"d":6,"h":19,"n":27},{"d":6,"h":20,"n":9},{"d":6,"h":21,"n":7},{"d":6,"h":22,"n":8},{"d":6,"h":23,"n":20},{"d":7,"h":0,"n":28},{"d":7,"h":1,"n":44},{"d":7,"h":2,"n":22},{"d":7,"h":3,"n":46},{"d":7,"h":4,"n":13},{"d":7,"h":5,"n":24},{"d":7,"h":6,"n":18},{"d":7,"h":7,"n":56},{"d":7,"h":8,"n":20},{"d":7,"h":9,"n":33},{"d":7,"h":10,"n":22},{"d":7,"h":11,"n":33},{"d":7,"h":12,"n":39},{"d":7,"h":13,"n":14},{"d":7,"h":14,"n":32},{"d":7,"h":15,"n":55},{"d":7,"h":16,"n":113},{"d":7,"h":17,"n":126},{"d":7,"h":18,"n":102},{"d":7,"h":19,"n":20},{"d":7,"h":20,"n":12},{"d":7,"h":21,"n":34},{"d":7,"h":22,"n":27},{"d":7,"h":23,"n":35},{"d":8,"h":0,"n":3},{"d":8,"h":1,"n":38},{"d":8,"h":2,"n":53},{"d":8,"h":3,"n":9},{"d":8,"h":4,"n":31},{"d":8,"h":5,"n":50},{"d":8,"h":6,"n":18},{"d":8,"h":7,"n":31},{"d":8,"h":8,"n":6},{"d":8,"h":9,"n":15},{"d":8,"h":10,"n":15},{"d":8,"h":11,"n":24},{"d":8,"h":12,"n":2},{"d":8,"h":13,"n":14},{"d":8,"h":14,"n":3},{"d":8,"h":15,"n":23},{"d":8,"h":16,"n":0},{"d":8,"h":17,"n":2},{"d":8,"h":18,"n":75},{"d":8,"h":19,"n":388},{"d":8,"h":20,"n":67},{"d":8,"h":21,"n":31},{"d":8,"h":22,"n":10},{"d":8,"h":23,"n":6},{"d":9,"h":0,"n":6},{"d":9,"h":1,"n":29},{"d":9,"h":2,"n":25},{"d":9,"h":3,"n":6},{"d":9,"h":4,"n":1},{"d":9,"h":5,"n":4},{"d":9,"h":6,"n":6},{"d":9,"h":7,"n":36},{"d":9,"h":8,"n":10},{"d":9,"h":9,"n":10},{"d":9,"h":10,"n":7},{"d":9,"h":11,"n":12},{"d":9,"h":12,"n":4},{"d":9,"h":13,"n":3},{"d":9,"h":14,"n":7},{"d":9,"h":15,"n":10},{"d":9,"h":16,"n":54},{"d":9,"h":17,"n":68},{"d":9,"h":18,"n":11},{"d":9,"h":19,"n":4},{"d":9,"h":20,"n":6},{"d":9,"h":21,"n":3},{"d":9,"h":22,"n":4},{"d":9,"h":23,"n":39},{"d":10,"h":0,"n":39},{"d":10,"h":1,"n":50},{"d":10,"h":2,"n":38},{"d":10,"h":3,"n":2},{"d":10,"h":4,"n":0},{"d":10,"h":5,"n":4},{"d":10,"h":6,"n":2},{"d":10,"h":7,"n":17},{"d":10,"h":8,"n":0},{"d":10,"h":9,"n":0},{"d":10,"h":10,"n":0},{"d":10,"h":11,"n":0},{"d":10,"h":12,"n":0},{"d":10,"h":13,"n":0},{"d":10,"h":14,"n":0},{"d":10,"h":15,"n":0},{"d":10,"h":16,"n":0},{"d":10,"h":17,"n":0},{"d":10,"h":18,"n":0},{"d":10,"h":19,"n":0},{"d":10,"h":20,"n":0},{"d":10,"h":21,"n":0},{"d":10,"h":22,"n":0},{"d":10,"h":23,"n":0}],"mirrors":["releases.ubuntu.com","cdimage.debian.org","download.fedoraproject.org","mirror.archlinux.org","distro.ibiblio.org","ftp.osuosl.org","mirrors.kernel.org","linuxtracker.org","fosshost.org"],"by_mirror":[{"d":1,"releases.ubuntu.com":58,"cdimage.debian.org":59,"download.fedoraproject.org":130,"mirror.archlinux.org":0,"distro.ibiblio.org":32,"ftp.osuosl.org":0,"mirrors.kernel.org":0,"linuxtracker.org":0,"fosshost.org":0},{"d":2,"releases.ubuntu.com":107,"cdimage.debian.org":52,"download.fedoraproject.org":52,"mirror.archlinux.org":0,"distro.ibiblio.org":10,"ftp.osuosl.org":0,"mirrors.kernel.org":0,"linuxtracker.org":0,"fosshost.org":0},{"d":3,"releases.ubuntu.com":98,"cdimage.debian.org":83,"download.fedoraproject.org":93,"mirror.archlinux.org":0,"distro.ibiblio.org":21,"ftp.osuosl.org":0,"mirrors.kernel.org":0,"linuxtracker.org":0,"fosshost.org":0},{"d":4,"releases.ubuntu.com":157,"cdimage.debian.org":77,"download.fedoraproject.org":46,"mirror.archlinux.org":0,"distro.ibiblio.org":130,"ftp.osuosl.org":117,"mirrors.kernel.org":0,"linuxtracker.org":0,"fosshost.org":0},{"d":5,"releases.ubuntu.com":165,"cdimage.debian.org":113,"download.fedoraproject.org":52,"mirror.archlinux.org":0,"distro.ibiblio.org":45,"ftp.osuosl.org":0,"mirrors.kernel.org":0,"linuxtracker.org":0,"fosshost.org":0},{"d":6,"releases.ubuntu.com":183,"cdimage.debian.org":122,"download.fedoraproject.org":113,"mirror.archlinux.org":0,"distro.ibiblio.org":50,"ftp.osuosl.org":0,"mirrors.kernel.org":0,"linuxtracker.org":0,"fosshost.org":0},{"d":7,"releases.ubuntu.com":359,"cdimage.debian.org":149,"download.fedoraproject.org":158,"mirror.archlinux.org":0,"distro.ibiblio.org":67,"ftp.osuosl.org":46,"mirrors.kernel.org":97,"linuxtracker.org":92,"fosshost.org":0},{"d":8,"releases.ubuntu.com":161,"cdimage.debian.org":140,"download.fedoraproject.org":73,"mirror.archlinux.org":462,"distro.ibiblio.org":37,"ftp.osuosl.org":36,"mirrors.kernel.org":2,"linuxtracker.org":2,"fosshost.org":1},{"d":9,"releases.ubuntu.com":158,"cdimage.debian.org":72,"download.fedoraproject.org":28,"mirror.archlinux.org":83,"distro.ibiblio.org":15,"ftp.osuosl.org":8,"mirrors.kernel.org":0,"linuxtracker.org":1,"fosshost.org":0},{"d":10,"releases.ubuntu.com":22,"cdimage.debian.org":35,"download.fedoraproject.org":30,"mirror.archlinux.org":14,"distro.ibiblio.org":26,"ftp.osuosl.org":25,"mirrors.kernel.org":0,"linuxtracker.org":0,"fosshost.org":0}],"latest":[{"name":"archlinux-2024.11.01-x86_64.iso","gb":24.6,"mirror":"releases.ubuntu.com","cat":"desktop-environments","d":10,"hm":"07:54"},{"name":"Fedora-Workstation-Live-x86_64-41.iso","gb":21.9,"mirror":"cdimage.debian.org","cat":"arm-builds","d":10,"hm":"07:36"},{"name":"kali-linux-2024.3-installer-amd64.iso","gb":21.9,"mirror":"download.fedoraproject.org","cat":"arm-builds","d":10,"hm":"07:35"},{"name":"MX-23.3_x64.iso","gb":21.9,"mirror":"releases.ubuntu.com","cat":"desktop-environments","d":10,"hm":"07:25"},{"name":"Fedora-Workstation-Live-x86_64-41.iso","gb":17.7,"mirror":"download.fedoraproject.org","cat":"arm-builds","d":10,"hm":"07:16"},{"name":"EndeavourOS-Galileo-11-2024.iso","gb":17.7,"mirror":"cdimage.debian.org","cat":"arm-builds","d":10,"hm":"07:16"},{"name":"archlinux-2024.12.01-x86_64.iso","gb":17.7,"mirror":"releases.ubuntu.com","cat":"desktop-environments","d":10,"hm":"07:14"},{"name":"Fedora-Server-dvd-x86_64-42.iso","gb":3.2,"mirror":"cdimage.debian.org","cat":"server-editions","d":10,"hm":"07:12"},{"name":"artix-base-openrc-20241201-x86_64.iso","gb":1.7,"mirror":"cdimage.debian.org","cat":"server-editions","d":10,"hm":"07:12"},{"name":"almalinux-9.4-x86_64-dvd.iso","gb":1.2,"mirror":"cdimage.debian.org","cat":"server-editions","d":10,"hm":"07:10"},{"name":"openSUSE-Leap-15.6-DVD-x86_64.iso","gb":3.0,"mirror":"cdimage.debian.org","cat":"server-editions","d":10,"hm":"07:10"},{"name":"openSUSE-Leap-15.6-DVD-x86_64.iso","gb":1.7,"mirror":"releases.ubuntu.com","cat":"distributions","d":10,"hm":"07:08"}]}</script>
+<script>
+(() => {
+  const D = JSON.parse(document.getElementById('data').textContent);
+  const fmtG = d3.format('.2f'), fmtTB = d3.format('.1f'), fmtN = d3.format(',');
+  const hh = (h) => String(h).padStart(2, '0') + ':00';
+  const dayLabel = (d) => 'Day ' + d;
+  const css = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  const series = () => [1, 2, 3, 4, 5, 6].map((i) => css('--s' + i));
+
+  // headline
+  const peak = D.daily.reduce((a, b) => (b.peak_tx > a.peak_tx ? b : a));
+  const totals = {
+    tx: d3.sum(D.daily, (r) => r.tx_tb), rx: d3.sum(D.daily, (r) => r.rx_tb),
+    avg: d3.sum(D.daily, (r) => r.avg_tx * r.hours) / d3.sum(D.daily, (r) => r.hours),
+    chickens: d3.sum(D.daily, (r) => r.n),
+  };
+  document.getElementById('take').innerHTML = '';
+  const take = document.getElementById('take');
+  const b = (t) => { const e = document.createElement('b'); e.textContent = t; return e; };
+  take.append('Over ', b(D.days), ' days the mirror uploaded ', b(fmtTB(totals.tx) + ' TB'), ' and took in ', b(fmtN(totals.chickens)), ' chickens. The busiest 5 minutes hit ', b(fmtG(peak.peak_tx) + ' Gbps'), ' on ', b(dayLabel(peak.d)), ' at ' + peak.peak_at + ' UTC.');
+  const tiles = [['Uploaded, whole log', fmtTB(totals.tx), 'TB'], ['Downloaded, whole log', fmtTB(totals.rx), 'TB'], ['Average upload', fmtG(totals.avg), 'Gbps, around the clock'], ['Busiest 5 minutes', fmtG(peak.peak_tx), 'Gbps upload'], ['Chickens added', fmtN(totals.chickens), 'whole log']];
+  const tilesEl = document.getElementById('tiles');
+  for (const [label, num, sub] of tiles) {
+    const t = document.createElement('div'); t.className = 'tile';
+    const l = document.createElement('span'); l.className = 'label'; l.textContent = label;
+    const n = document.createElement('span'); n.className = 'num'; n.textContent = num;
+    const s = document.createElement('span'); s.className = 'sub'; s.textContent = sub;
+    t.append(l, n, s); tilesEl.append(t);
+  }
+
+  const tip = (box) => {
+    const t = document.createElement('div'); t.className = 'tip'; t.hidden = true; box.append(t);
+    return {
+      show(ev, head, rows) {
+        t.replaceChildren();
+        const h = document.createElement('div'); h.className = 'h'; h.textContent = head; t.append(h);
+        for (const [c, label, val] of rows) {
+          const r = document.createElement('div'); r.className = 'r';
+          if (c) { const i = document.createElement('i'); i.style.background = c; r.append(i); }
+          r.append(label + ': ' + val); t.append(r);
+        }
+        t.hidden = false;
+        const bw = box.clientWidth, tw = t.offsetWidth, th = t.offsetHeight, r = box.getBoundingClientRect();
+        let x = ev.clientX - r.left + 12, y = ev.clientY - r.top - th - 12;
+        if (x + tw > bw) x = ev.clientX - r.left - tw - 12;
+        if (x < 0) x = 0;
+        if (y < 0) y = ev.clientY - r.top + 12;
+        t.style.left = x + 'px'; t.style.top = y + 'px';
+      },
+      hide() { t.hidden = true; },
+    };
+  };
+  const axisStyle = (g) => g.attr('font-size', null).attr('font-family', null).attr('color', 'var(--muted)');
+  const measure = (g) => { let w = 0; g.selectAll('text').each(function () { w = Math.max(w, this.getComputedTextLength()); }); return Math.ceil(w) + 10; };
+
+  const drawThroughput = () => {
+    const el = document.getElementById('tp-chart'); const S = series();
+    const rows = D.hourly.map((r) => ({ x: (r.d - 1) * 24 + r.h, d: r.d, h: r.h, tx: r.tx, rx: r.rx, mx: r.mx }));
+    const W = Math.max(320, el.clientWidth), H = 280, m = { t: 12, r: 16, b: 26, l: 0 };
+    el.replaceChildren();
+    const svg = d3.create('svg').attr('viewBox', `0 0 ${W} ${H}`).attr('width', '100%').attr('height', H); el.append(svg.node());
+    const y = d3.scaleLinear([0, d3.max(rows, (r) => Math.max(r.mx, r.rx))], [H - m.b, m.t]).nice();
+    const yAxis = axisStyle(svg.append('g').call(d3.axisLeft(y).ticks(5).tickSize(0).tickPadding(6).tickFormat((v) => v + ' Gbps')));
+    m.l = measure(yAxis); yAxis.attr('transform', `translate(${m.l},0)`); yAxis.select('.domain').remove();
+    const x = d3.scaleLinear(d3.extent(rows, (r) => r.x), [m.l, W - m.r]);
+    svg.append('g').selectAll('line').data(y.ticks(5)).join('line').attr('x1', m.l).attr('x2', W - m.r).attr('y1', y).attr('y2', y).attr('stroke', 'var(--grid)');
+    const dayStarts = d3.range(1, D.days + 1).map((d) => (d - 1) * 24).filter((v) => v >= x.domain()[0] - 12 && v <= x.domain()[1]);
+    const every = Math.ceil(dayStarts.length / Math.max(2, Math.floor((W - m.l - m.r) / 64)));
+    const xAxis = axisStyle(svg.append('g').attr('transform', `translate(0,${H - m.b})`).call(d3.axisBottom(x).tickValues(dayStarts.filter((v, i) => i % every === 0)).tickSize(0).tickPadding(8).tickFormat((v) => 'Day ' + (v / 24 + 1))));
+    xAxis.select('.domain').attr('stroke', 'var(--axis)');
+    const grad = svg.append('defs').append('linearGradient').attr('id', 'g-up').attr('x1', 0).attr('x2', 0).attr('y1', 0).attr('y2', 1);
+    [[0, .26], [.25, .16], [.5, .08], [.75, .03], [1, 0]].forEach(([o, a]) => grad.append('stop').attr('offset', o).attr('stop-color', S[0]).attr('stop-opacity', a));
+    svg.append('path').datum(rows).attr('fill', 'url(#g-up)').attr('d', d3.area().x((r) => x(r.x)).y0(y(0)).y1((r) => y(r.tx)));
+    svg.append('path').datum(rows).attr('fill', 'none').attr('stroke', S[0]).attr('stroke-opacity', .35).attr('stroke-width', 1).attr('d', d3.line().x((r) => x(r.x)).y((r) => y(r.mx)));
+    svg.append('path').datum(rows).attr('fill', 'none').attr('stroke', S[1]).attr('stroke-width', 2).attr('stroke-linecap', 'round').attr('stroke-linejoin', 'round').attr('d', d3.line().x((r) => x(r.x)).y((r) => y(r.rx)));
+    svg.append('path').datum(rows).attr('fill', 'none').attr('stroke', S[0]).attr('stroke-width', 2).attr('stroke-linecap', 'round').attr('stroke-linejoin', 'round').attr('d', d3.line().x((r) => x(r.x)).y((r) => y(r.tx)));
+    const hover = svg.append('g').style('display', 'none');
+    hover.append('line').attr('y1', m.t).attr('y2', H - m.b).attr('stroke', 'var(--ref)');
+    const dTx = hover.append('circle').attr('r', 4).attr('fill', S[0]).attr('stroke', 'var(--panel)').attr('stroke-width', 2);
+    const dRx = hover.append('circle').attr('r', 4).attr('fill', S[1]).attr('stroke', 'var(--panel)').attr('stroke-width', 2);
+    const tp = tip(el); const bis = d3.bisector((r) => r.x).center;
+    svg.append('rect').attr('x', m.l).attr('y', m.t).attr('width', W - m.l - m.r).attr('height', H - m.t - m.b).attr('fill', 'transparent')
+      .on('pointermove', (ev) => {
+        const [px] = d3.pointer(ev); const r = rows[bis(rows, x.invert(px))];
+        hover.style('display', null).select('line').attr('x1', x(r.x)).attr('x2', x(r.x));
+        dTx.attr('cx', x(r.x)).attr('cy', y(r.tx)); dRx.attr('cx', x(r.x)).attr('cy', y(r.rx));
+        tp.show(ev, `${dayLabel(r.d)}, ${hh(r.h)} UTC`, [[S[0], 'Upload', fmtG(r.tx) + ' Gbps'], [S[1], 'Download', fmtG(r.rx) + ' Gbps'], [null, 'Busiest 5 min', fmtG(r.mx) + ' Gbps']]);
+      }).on('pointerleave', () => { hover.style('display', 'none'); tp.hide(); });
+  };
+
+  const heat = (el, rows, key, unitFmt, colorIdx, label, rampEl, maxEl) => {
+    const S = series(); const ramp = d3.interpolateRgb(css('--panel'), S[colorIdx]);
+    const max = d3.max(rows, (r) => r[key]) || 1; const color = (v) => ramp(0.05 + 0.95 * Math.sqrt(v / max));
+    rampEl.style.background = `linear-gradient(to right, ${ramp(0.05)}, ${ramp(1)})`; maxEl.textContent = unitFmt(max);
+    const byKey = new Map(rows.map((r) => [r.d + '|' + r.h, r[key]]));
+    const W = Math.max(320, el.clientWidth), labW = 48, topH = 18, cw = (W - labW) / 24, ch = Math.max(14, Math.min(26, cw)), H = topH + ch * D.days + 4;
+    el.replaceChildren();
+    const svg = d3.create('svg').attr('viewBox', `0 0 ${W} ${H}`).attr('width', '100%').attr('height', H); el.append(svg.node());
+    svg.append('g').selectAll('text').data(d3.range(0, 24, 3)).join('text').attr('x', (h) => labW + h * cw + 2).attr('y', topH - 6).text(hh);
+    svg.append('g').selectAll('text').data(d3.range(1, D.days + 1)).join('text').attr('x', labW - 8).attr('y', (d, i) => topH + i * ch + ch / 2 + 4).attr('text-anchor', 'end').text(dayLabel);
+    const cells = []; for (let d = 1; d <= D.days; d++) for (let h = 0; h < 24; h++) cells.push({ d, h, v: byKey.has(d + '|' + h) ? byKey.get(d + '|' + h) : null });
+    const tp = tip(el);
+    svg.append('g').selectAll('rect').data(cells).join('rect')
+      .attr('x', (c) => labW + c.h * cw + 1).attr('y', (c) => topH + (c.d - 1) * ch + 1).attr('width', Math.max(1, cw - 2)).attr('height', ch - 2).attr('rx', 3)
+      .attr('fill', (c) => (c.v === null ? 'none' : color(c.v))).attr('stroke', (c) => (c.v === null ? 'var(--grid)' : 'none'))
+      .on('pointermove', (ev, c) => tp.show(ev, `${dayLabel(c.d)}, ${hh(c.h)}–${hh((c.h + 1) % 24)} UTC`, [[c.v === null ? null : color(c.v), label, c.v === null ? 'no data' : unitFmt(c.v)]]))
+      .on('pointerleave', () => tp.hide());
+  };
+
+  const stacked = (el, legendEl, rows, keys, labels, unit) => {
+    const S = series();
+    const W = Math.max(320, el.clientWidth), H = 260, m = { t: 20, r: 8, b: 26, l: 0 };
+    legendEl.replaceChildren();
+    keys.forEach((k, i) => { const s = document.createElement('span'); const i2 = document.createElement('i'); i2.className = 'sw'; i2.style.background = S[i]; s.append(i2, labels[i]); legendEl.append(s); });
+    el.replaceChildren();
+    const svg = d3.create('svg').attr('viewBox', `0 0 ${W} ${H}`).attr('width', '100%').attr('height', H); el.append(svg.node());
+    const total = (r) => d3.sum(keys, (k) => r[k]);
+    const y = d3.scaleLinear([0, d3.max(rows, total) || 1], [H - m.b, m.t]).nice();
+    const yAxis = axisStyle(svg.append('g').call(d3.axisLeft(y).ticks(5).tickSize(0).tickPadding(6).tickFormat(fmtN)));
+    m.l = measure(yAxis); yAxis.attr('transform', `translate(${m.l},0)`); yAxis.select('.domain').remove();
+    const x = d3.scaleBand(rows.map((r) => r.d), [m.l, W - m.r]).paddingInner(0.3).paddingOuter(0.15);
+    const bw = Math.min(32, x.bandwidth()), off = (x.bandwidth() - bw) / 2;
+    svg.append('g').selectAll('line').data(y.ticks(5)).join('line').attr('x1', m.l).attr('x2', W - m.r).attr('y1', y).attr('y2', y).attr('stroke', 'var(--grid)');
+    const every = Math.ceil(rows.length / Math.max(2, Math.floor((W - m.l) / 56)));
+    const xAxis = axisStyle(svg.append('g').attr('transform', `translate(0,${H - m.b})`).call(d3.axisBottom(x).tickSize(0).tickPadding(8).tickValues(rows.map((r) => r.d).filter((d, i) => i % every === 0)).tickFormat(dayLabel)));
+    xAxis.select('.domain').attr('stroke', 'var(--axis)');
+    const tp = tip(el);
+    const show = (ev, r) => tp.show(ev, dayLabel(r.d), [[null, 'Total', fmtN(total(r)) + unit], ...keys.map((k, i) => [S[i], labels[i], fmtN(r[k])])]);
+    svg.append('g').selectAll('g').data(d3.stack().keys(keys)(rows)).join('g').attr('fill', (s, i) => S[i])
+      .selectAll('rect').data((s) => s.map((p) => ({ p, row: p.data }))).join('rect')
+      .attr('x', (d) => x(d.row.d) + off).attr('width', bw).attr('y', (d) => y(d.p[1])).attr('height', (d) => Math.max(0, y(d.p[0]) - y(d.p[1])))
+      .attr('stroke', 'var(--panel)').attr('stroke-width', 1)
+      .on('pointermove', (ev, d) => show(ev, d.row)).on('pointerleave', () => tp.hide());
+    svg.append('g').selectAll('text').data(rows).join('text').attr('x', (r) => x(r.d) + off + bw / 2).attr('y', (r) => y(total(r)) - 5).attr('text-anchor', 'middle').text((r) => fmtN(total(r)));
+  };
+
+  const mirrorRows = () => {
+    const tot = D.mirrors.map((m) => [m, d3.sum(D.by_mirror, (r) => r[m])]).sort((a, b) => b[1] - a[1]);
+    const top = tot.slice(0, 5).map(([m]) => m), rest = tot.slice(5).map(([m]) => m);
+    const rows = D.by_mirror.map((r) => { const o = { d: r.d }; top.forEach((m) => { o[m] = r[m]; }); o.other = d3.sum(rest, (m) => r[m]); return o; });
+    return { rows, keys: [...top, 'other'], labels: [...top, 'other mirrors'] };
+  };
+
+  const td = (text, cls) => { const c = document.createElement('td'); c.textContent = text; if (cls) c.className = cls; return c; };
+  const latest = document.getElementById('latest-rows');
+  for (const r of D.latest) { const tr = document.createElement('tr'); tr.append(td(r.name, 'mono'), td(fmtTB(r.gb)), td(r.mirror, 'mono'), td(r.cat, 'mono'), td(dayLabel(r.d)), td(r.hm)); latest.append(tr); }
+  const daily = document.getElementById('daily-rows');
+  for (const r of D.daily) { const tr = document.createElement('tr'); if (r === peak) tr.className = 'max'; tr.append(td(dayLabel(r.d)), td(fmtTB(r.tx_tb)), td(fmtTB(r.rx_tb)), td(fmtG(r.avg_tx)), td(fmtG(r.peak_tx)), td(r.peak_at), td(fmtN(r.n)), td(fmtTB(r.tb))); daily.append(tr); }
+
+  const drawAll = () => {
+    drawThroughput();
+    heat(document.getElementById('heat-tx'), D.hourly.map((r) => ({ d: r.d, h: r.h, tx: r.tx })), 'tx', (v) => fmtG(v) + ' Gbps', 0, 'Upload', document.getElementById('ramp-tx'), document.getElementById('heat-tx-max'));
+    heat(document.getElementById('heat-adds'), D.adds_heat, 'n', (v) => fmtN(v) + ' chickens', 1, 'Added', document.getElementById('ramp-adds'), document.getElementById('heat-adds-max'));
+    stacked(document.getElementById('adds-bars'), document.getElementById('adds-legend'), D.adds, D.cats, D.cats, ' chickens');
+    const mr = mirrorRows(); stacked(document.getElementById('mirror-bars'), document.getElementById('mirror-legend'), mr.rows, mr.keys, mr.labels, ' chickens');
+  };
+  drawAll();
+  let raf = 0; window.addEventListener('resize', () => { cancelAnimationFrame(raf); raf = requestAnimationFrame(drawAll); });
+  if (window.matchMedia) window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', drawAll);
+})();
+</script>
+</body>
+</html>
